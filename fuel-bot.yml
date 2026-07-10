@@ -1,0 +1,80 @@
+name: Проверка АЗС и публикация в MAX
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Что проверить
+        required: true
+        type: choice
+        default: test-max
+        options:
+          - test-max
+          - fuel-check
+  schedule:
+    # Запуск примерно раз в 10 минут. Расписание GitHub работает по UTC.
+    - cron: '3/10 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dolgorukovo-fuel-bot
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 7
+    steps:
+      - name: Скачать код
+        uses: actions/checkout@v4
+
+      - name: Установить Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Проверить обязательные секреты
+        env:
+          MAX_BOT_TOKEN: ${{ secrets.MAX_BOT_TOKEN }}
+          MAX_CHANNEL_LINK: ${{ secrets.MAX_CHANNEL_LINK }}
+          MAX_TARGET_CHAT_ID: ${{ secrets.MAX_TARGET_CHAT_ID }}
+        run: |
+          test -n "$MAX_BOT_TOKEN" || (echo "Не создан секрет MAX_BOT_TOKEN" && exit 1)
+          if [ -z "$MAX_CHANNEL_LINK" ] && [ -z "$MAX_TARGET_CHAT_ID" ]; then
+            echo "Создайте MAX_CHANNEL_LINK или MAX_TARGET_CHAT_ID"
+            exit 1
+          fi
+
+      - name: Отправить тестовое сообщение в MAX
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'test-max'
+        env:
+          MAX_BOT_TOKEN: ${{ secrets.MAX_BOT_TOKEN }}
+          MAX_CHANNEL_LINK: ${{ secrets.MAX_CHANNEL_LINK }}
+          MAX_TARGET_CHAT_ID: ${{ secrets.MAX_TARGET_CHAT_ID }}
+        run: npm run test:max
+
+      - name: Проверить Chrome
+        if: github.event_name == 'schedule' || inputs.mode == 'fuel-check'
+        run: google-chrome --version
+
+      - name: Получить данные АЗС и отправить в MAX
+        if: github.event_name == 'schedule' || inputs.mode == 'fuel-check'
+        env:
+          MAX_BOT_TOKEN: ${{ secrets.MAX_BOT_TOKEN }}
+          MAX_CHANNEL_LINK: ${{ secrets.MAX_CHANNEL_LINK }}
+          MAX_TARGET_CHAT_ID: ${{ secrets.MAX_TARGET_CHAT_ID }}
+          CHROME_PATH: /usr/bin/google-chrome
+          SBER_SOURCE_URL: https://sberazs.ru/
+          CAPTURE_SECONDS: '25'
+        run: npm run run
+
+      - name: Сохранить диагностику при ошибке получения АЗС
+        if: failure() && (github.event_name == 'schedule' || inputs.mode == 'fuel-check')
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuel-bot-diagnostics
+          path: logs/
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,14 @@
+{
+  "name": "dolgorukovo-max-fuel-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Проверка публичной карты sberazs.ru и отправка сводки по Долгоруковскому округу в канал MAX",
+  "scripts": {
+    "test:max": "node scripts/test-max.mjs",
+    "run": "node scripts/sber-to-max.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
