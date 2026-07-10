@@ -23,19 +23,31 @@ export async function resolveChatId(token, { chatId, channelLink }) {
 
 export async function sendMaxMessage(token, chatId, text) {
   const url = new URL(`${API_BASE}/messages`);
+
   url.searchParams.set('chat_id', String(chatId));
+  url.searchParams.set('disable_link_preview', 'true');
+
   const response = await fetch(url, {
     method: 'POST',
-    headers: { Authorization: token, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: token,
+      'Content-Type': 'application/json'
+    },
     body: JSON.stringify({
       text: String(text).slice(0, 4000),
       format: 'markdown',
-      notify: true,
-      disable_link_preview: true
+      notify: true
     }),
     signal: AbortSignal.timeout(20_000)
   });
+
   const body = await response.text();
-  if (!response.ok) throw new Error(`Не удалось отправить сообщение: MAX API ${response.status}: ${body.slice(0, 500)}`);
+
+  if (!response.ok) {
+    throw new Error(
+      `Не удалось отправить сообщение: MAX API ${response.status}: ${body.slice(0, 500)}`
+    );
+  }
+
   return body ? JSON.parse(body) : null;
 }
