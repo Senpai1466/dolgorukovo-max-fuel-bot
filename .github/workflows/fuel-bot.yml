@@ -26,14 +26,55 @@ jobs:
   publish:
     runs-on: ubuntu-22.04
     timeout-minutes: 7
+
     steps:
       - name: Скачать код
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Установить Node.js
         uses: actions/setup-node@v5
         with:
           node-version: '22'
+
+      - name: Добавить сертификаты Минцифры для MAX API
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CA_DIR="$RUNNER_TEMP/russian-trusted-ca"
+          mkdir -p "$CA_DIR"
+
+          # Эти два файла опубликованы на странице сертификатов Госуслуг.
+          # --insecure применяется ТОЛЬКО при первичном скачивании CA,
+          # после чего корневой сертификат проверяется по закреплённому SHA-256.
+          curl --fail --silent --show-error --location --insecure \
+            "https://gu-st.ru/content/Other/doc/russian_trusted_root_ca.cer" \
+            --output "$CA_DIR/root.pem"
+
+          curl --fail --silent --show-error --location --insecure \
+            "https://gu-st.ru/content/Other/doc/russian_trusted_sub_ca.cer" \
+            --output "$CA_DIR/sub.pem"
+
+          EXPECTED_ROOT_SHA256="D26D2D0231B7C39F92CC738512BA54103519E4405D68B5BD703E9788CA8ECF31"
+          ACTUAL_ROOT_SHA256="$(openssl x509 -in "$CA_DIR/root.pem" -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':')"
+
+          if [ "$ACTUAL_ROOT_SHA256" != "$EXPECTED_ROOT_SHA256" ]; then
+            echo "Ошибка: отпечаток корневого сертификата Минцифры не совпал."
+            echo "Ожидался: $EXPECTED_ROOT_SHA256"
+            echo "Получен:   $ACTUAL_ROOT_SHA256"
+            exit 1
+          fi
+
+          # Проверяем, что выпускающий сертификат действительно подписан корневым.
+          openssl verify -CAfile "$CA_DIR/root.pem" "$CA_DIR/sub.pem"
+
+          cat "$CA_DIR/root.pem" "$CA_DIR/sub.pem" > "$CA_DIR/bundle.pem"
+
+          # Node.js читает NODE_EXTRA_CA_CERTS только при запуске процесса.
+          echo "NODE_EXTRA_CA_CERTS=$CA_DIR/bundle.pem" >> "$GITHUB_ENV"
+          echo "NODE_USE_SYSTEM_CA=1" >> "$GITHUB_ENV"
+
+          echo "Сертификаты Минцифры проверены и подключены."
 
       - name: Проверить обязательные секреты
         env:
